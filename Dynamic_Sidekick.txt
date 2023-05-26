@@ -1,0 +1,153 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © peacefulLizard50262
+
+//@version=5
+indicator("Dynamic Sidekick", overlay = true)
+
+grad(values)=>
+    switch values
+        39 => #6ef057
+        38 => #77ec56
+        37 => #7fe854
+        36 => #86e553
+        35 => #8ce151
+        34 => #92dd50
+        33 => #98d94f
+        32 => #9ed54d
+        31 => #a3d14c
+        30 => #a7ce4b
+        29 => #acca49
+        28 => #b0c648
+        27 => #b4c247
+        26 => #b8be46
+        25 => #bcb944
+        24 => #bfb543
+        23 => #c3b142
+        22 => #c6ad41
+        21 => #c9a93f
+        20 => #cca43e
+        19 => #cfa03d
+        18 => #d29c3c
+        17 => #d4973b
+        16 => #d79239
+        15 => #d98e38
+        14 => #dc8937
+        13 => #de8436
+        12 => #e07f35
+        11 => #e37934
+        10 => #e57433
+        9 =>  #e76e32
+        8 =>  #e96931
+        7 =>  #ea6230
+        6 =>  #ec5c2f
+        5 =>  #ee552e
+        4 =>  #f04d2d
+        3 =>  #f1452c
+        2 =>  #f33b2c
+        1 =>  #f5302b
+        0 =>  #f6212a
+
+ema(source)=>
+    var float ema = 0.0
+    var int count = 0
+    count := nz(count[1]) + 1
+    ema := (1.0 - 2.0 / (count + 1.0)) * nz(ema[1]) + 2.0 / (count + 1.0) * source
+    ema
+
+atan2(y, x) =>
+    var float angle = 0.0
+    if x > 0
+        angle := math.atan(y / x)
+    else
+        if x < 0 and y >= 0
+            angle := math.atan(y / x) + math.pi
+        else
+            if x < 0 and y < 0
+                angle := math.atan(y / x) - math.pi
+            else
+                if x == 0 and y > 0
+                    angle := math.pi / 2
+                else
+                    if x == 0 and y < 0
+                        angle := -math.pi / 2
+    angle
+
+
+// Custom cosh function
+cosh(float x) =>
+    (math.exp(x) + math.exp(-x)) / 2
+
+// Custom acosh function
+acosh(float x) =>
+    x < 1 ? na : math.log(x + math.sqrt(x * x - 1))
+
+// Custom sinh function
+sinh(float x) =>
+    (math.exp(x) - math.exp(-x)) / 2
+
+// Custom asinh function
+asinh(float x) =>
+    math.log(x + math.sqrt(x * x + 1))
+
+// Custom inverse tangent function
+atan(float x) =>
+    math.pi / 2 - math.atan(1 / x)
+
+// Chebyshev Type I Moving Average
+chebyshevI(float src, int len, float ripple) =>
+    a = 0.
+    b = 0.
+    g = 0.
+    chebyshev = 0.
+    
+    a := cosh(1 / len * acosh(1 / (1 - ripple)))
+    b := sinh(1 / len * asinh(1 / ripple))
+    g := (a - b) / (a + b)
+    chebyshev := (1 - g) * src + g * nz(chebyshev[1])
+    chebyshev
+
+degrees(float source) =>
+    source * 180 / math.pi
+
+trend_angle(source, length, smoothing_length, smoothing_ripple) =>
+    source_tr = ema(ta.highest(source, length) - ta.lowest(source, length))
+    slope = (source - source[length]) / (source_tr/(length) * length)
+    angle_rad = atan2(slope, 1)
+    degrees = chebyshevI(degrees(angle_rad), smoothing_length, smoothing_ripple)
+    normalized = int((90 + degrees)/180 * 39)
+
+max(source, outlier_level, dev_lookback)=>
+    var float max = na
+    src = array.new<float>()
+    stdev = math.abs((source - ta.ema(source, dev_lookback))/ta.stdev(source, dev_lookback))
+    array.push(src, stdev < outlier_level ? source : -1.7976931348623157e+308)
+    max := math.max(nz(max[1]), array.get(src, 0))
+
+min(source, outlier_level, dev_lookback) =>
+    var float min = na
+    src = array.new<float>()
+    stdev = math.abs((source - ta.ema(source, dev_lookback))/ta.stdev(source, dev_lookback))
+    array.push(src, stdev < outlier_level ? source : 1.7976931348623157e+308)
+    min := math.min(nz(min[1]), array.get(src, 0))
+
+min_max(src, outlier_level, dev_lookback) =>
+    out = (src - min(src, outlier_level, dev_lookback))/(max(src, outlier_level, dev_lookback) - min(src, outlier_level, dev_lookback))
+    math.max(math.min(1, out), 0)
+
+volume_normalized(smoothing, dev_lookback, outlier_level)=>
+    min_max(ta.sma(volume, smoothing), outlier_level, dev_lookback)
+
+ma = ta.wma(close, 200)
+volume_normalized = volume_normalized(1, 20, 1)
+trend_angle = trend_angle(ma, 8, 8, 0.5)
+atr = ta.atr(10) * volume_normalized / 2
+
+colour = grad(trend_angle)
+
+highest = ta.sma(ma + atr, 4)
+lowest = ta.sma(ma - atr, 4)
+
+top = plot(highest, "Top", colour)
+bot = plot(lowest, "Bottom", colour)
+
+fill(top, bot, color = color.new(colour, 60))
